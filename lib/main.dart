@@ -1,26 +1,8 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
-import 'package:simple_permissions/simple_permissions.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:contacts_service/contacts_service.dart';
 
-
-Permission permissionFromString(String value) {
-  Permission permission;
-  for(Permission item in Permission.values) {
-    if(item.toString() == value) {
-      permission = item;
-      break;
-    }
-  }
-
-  return permission;
-}
-
 void main() async {
-  
-  await SimplePermissions.requestPermission(permissionFromString('Permission.ReadContacts'));
-  await SimplePermissions.requestPermission(permissionFromString('Permission.WriteContacts'));
-  
   runApp(new MaterialApp(
     home: new MyApp(),
   ));
@@ -35,32 +17,66 @@ class _State extends State<MyApp> {
 
   final GlobalKey<ScaffoldState> _scaffoldKey = new GlobalKey<ScaffoldState>();
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) async {
+      // try asking for contacts permission on first app launch
+      _wrapContactsAction((){ });
+    });
+  }
+
+  Future<void> _wrapContactsAction(Function action) async {
+    final isGranted = await Permission.contacts.isGranted;
+    if (isGranted) {
+      action();
+    } else {
+      final permStatus = await Permission.contacts.request();
+      if (permStatus.isGranted) {
+        action();
+      }
+    }
+  }
+
   void _create() async {
-    Contact contact = new Contact(familyName: 'Cairns', givenName: 'Bryan',
-        emails: [new Item(label: 'work', value: 'bcairns@voidrealms.com')]);
-    await ContactsService.addContact(contact);
-    showInSnackbar('Created contact');
+    _wrapContactsAction(() async {
+      Contact contact = new Contact(familyName: 'Cairns', givenName: 'Bryan',
+          emails: [new Item(label: 'work', value: 'bcairns@voidrealms.com')]);
+      await ContactsService.addContact(contact);
+      showInSnackbar('Created contact');
+    });
   }
 
   void _find() async {
-    Iterable<Contact> people = await ContactsService.getContacts(query: 'Bryan');
-    showInSnackbar('There are ${people.length} people named Bryan');
-
+    _wrapContactsAction(() async {
+      Iterable<Contact> people = await ContactsService.getContacts(query: 'Bryan');
+      showInSnackbar('There are ${people.length} people named Bryan');
+    });
   }
 
   void _read() async {
-    Iterable<Contact> people = await ContactsService.getContacts(query: 'Bryan');
-    Contact contact = people.first;
-    showInSnackbar('Bryan email is ${contact.emails.first.value}');
+    _wrapContactsAction(() async {
+      Iterable<Contact> people = await ContactsService.getContacts(query: 'Bryan');
+      if (people.isNotEmpty) {
+        Contact contact = people.first;
+        showInSnackbar('Bryan email is ${contact.emails.first.value}');
+      } else {
+        showInSnackbar('Bryan not found');
+      }
+    });
   }
 
   void _delete() async {
-    Iterable<Contact> people = await ContactsService.getContacts(query: 'Bryan');
-    Contact contact = people.first;
-    
-    await ContactsService.deleteContact(contact);
-    showInSnackbar('Bryan deleted');
-    
+    _wrapContactsAction(() async {
+      Iterable<Contact> people = await ContactsService.getContacts(query: 'Bryan');
+      if (people.isNotEmpty) {
+        Contact contact = people.first;
+        await ContactsService.deleteContact(contact);
+        showInSnackbar('Bryan deleted');
+      } else {
+        showInSnackbar('Bryan not found');
+      }
+    });
   }
 
   void showInSnackbar(String message) {
@@ -86,7 +102,7 @@ class _State extends State<MyApp> {
               new RaisedButton(onPressed: _find,child: new Text('Find'),),
               new RaisedButton(onPressed: _read,child: new Text('Read'),),
               new RaisedButton(onPressed: _delete,child: new Text('Delete'),),
-              new RaisedButton(onPressed: SimplePermissions.openSettings,child: new Text('Permissions'),),
+              new RaisedButton(onPressed: openAppSettings, child: new Text('Permissions'),),
             ],
           ),
         )
